@@ -1,45 +1,52 @@
 const express = require('express');
-const cors = require('cors');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Главная страница - перенаправление на старт продаж (должно быть ДО express.static)
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'start-sales.html'));
+// Public pages stay open; every administrative endpoint uses the same guard.
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
 });
-
-// Защита админки (базовая аутентификация)
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'grant2025';
-
-app.get('/admin.html', (req, res, next) => {
-    const auth = req.headers.authorization;
-    
-    if (!auth) {
-        res.setHeader('WWW-Authenticate', 'Basic realm="Admin Panel"');
+app.use(express.json({ limit: '16kb' }));
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+function equal(a, b) {
+    return crypto.timingSafeEqual(crypto.createHash('sha256').update(a).digest(),
+        crypto.createHash('sha256').update(b).digest());
+}
+function requireAdmin(req, res, next) {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!ADMIN_USERNAME || !ADMIN_PASSWORD) return res.status(503).send('Администрирование не настроено');
+    const match = /^Basic ([A-Za-z0-9+/=]+)$/i.exec(req.headers.authorization || '');
+    const decoded = match ? Buffer.from(match[1], 'base64').toString() : '';
+    const colon = decoded.indexOf(':');
+    if (colon < 0 || !equal(decoded.slice(0, colon), ADMIN_USERNAME) || !equal(decoded.slice(colon + 1), ADMIN_PASSWORD)) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="Grant Admin", charset="UTF-8"');
         return res.status(401).send('Требуется авторизация');
     }
-    
-    const credentials = Buffer.from(auth.split(' ')[1], 'base64').toString().split(':');
-    const username = credentials[0];
-    const password = credentials[1];
-    
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-        next();
-    } else {
-        res.setHeader('WWW-Authenticate', 'Basic realm="Admin Panel"');
-        return res.status(401).send('Неверные учетные данные');
+    if (!['GET', 'HEAD'].includes(req.method)) {
+        // Browser writes must carry the exact configured public/admin origin.
+        if (!process.env.ADMIN_ORIGIN || req.headers.origin !== process.env.ADMIN_ORIGIN) {
+            return res.status(403).send('Недопустимый источник запроса');
+        }
     }
-});
+    next();
+}
+app.get(['/', '/index.html', '/start-sales.html'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/admin.html', requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
+// Public booking is handled on Avito; obsolete forms must never pretend success.
+app.post('/api/submit-form', (req, res) => res.status(410).json({ success: false, error: 'Используйте объявление на Avito' }));
+app.use('/api', requireAdmin);
 
-// Ping endpoint для предотвращения засыпания (каждые 5 минут)
+// Health check; no self-pinging or external keep-alive dependency.
 app.get('/ping', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -50,36 +57,25 @@ app.get('/robots.txt', (req, res) => {
     res.sendFile(path.join(__dirname, 'robots.txt'));
 });
 
-app.get('/sitemap.xml', (req, res) => {
-    res.type('application/xml');
-    res.sendFile(path.join(__dirname, 'sitemap.xml'));
-});
-
 app.get('/favicon.svg', (req, res) => {
     res.type('image/svg+xml');
     res.sendFile(path.join(__dirname, 'favicon.svg'));
 });
 
 // Статические файлы
-app.use(express.static('.'));
+app.use('/images', express.static(path.join(__dirname, 'images'), { dotfiles: 'deny', index: false }));
+for (const file of ['styles.css', 'script.js', 'google72712df90b9e25b7.html', 'yandex_0e2572565aa11afc.html', 'yandex_9a2800b80c3250ef.html']) {
+    app.get('/' + file, (req, res) => res.sendFile(path.join(__dirname, file)));
+}
 
 // Инициализация базы данных PostgreSQL
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: true } : false
 });
 
-// Проверка подключения к базе данных
-pool.on('connect', () => {
-    console.log('✓ Подключено к базе данных PostgreSQL');
-    console.log('✓ Режим:', process.env.NODE_ENV === 'production' ? 'PRODUCTION' : 'DEVELOPMENT');
-    initDatabase();
-});
-
-pool.on('error', (err) => {
-    console.error('❌ Ошибка подключения к базе данных:', err.message);
-    console.error('❌ DATABASE_URL:', process.env.DATABASE_URL ? 'установлен' : 'не установлен');
-});
+pool.on('error', () => console.error('Ошибка подключения к PostgreSQL'));
+if (process.env.DATABASE_URL) initDatabase();
 
 // Создание таблиц
 async function initDatabase() {
@@ -131,66 +127,6 @@ async function initDatabase() {
         console.error('❌ Ошибка создания таблиц:', err.message);
     }
 }
-
-// API endpoint для отправки форм
-app.post('/api/submit-form', async (req, res) => {
-    const formData = req.body;
-    const { type } = formData;
-
-    console.log('Получен запрос на /api/submit-form');
-    console.log('Тип формы:', type);
-    console.log('Данные:', JSON.stringify(formData, null, 2));
-
-    try {
-        if (type === 'booking') {
-            // Сохранение бронирования
-            const { bookingType, name, phone, email, checkIn, checkOut, bathhouse, message, timestamp } = formData;
-            
-            const result = await pool.query(
-                `INSERT INTO bookings (type, booking_type, name, phone, email, check_in, check_out, bathhouse, message, timestamp)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                 RETURNING id`,
-                [type, bookingType, name, phone, email, checkIn, checkOut, bathhouse ? 1 : 0, message || '', timestamp]
-            );
-            
-            console.log(`✓ Бронирование сохранено с ID: ${result.rows[0].id}`);
-            res.json({ success: true, id: result.rows[0].id });
-        } else if (type === 'review') {
-            // Сохранение отзыва
-            const { name, email, text, timestamp } = formData;
-            
-            const result = await pool.query(
-                `INSERT INTO reviews (name, email, text, timestamp)
-                 VALUES ($1, $2, $3, $4)
-                 RETURNING id`,
-                [name, email, text, timestamp]
-            );
-            
-            console.log(`✓ Отзыв сохранен с ID: ${result.rows[0].id}`);
-            res.json({ success: true, id: result.rows[0].id });
-        } else if (type === 'investment') {
-            // Сохранение заявки на инвестиции
-            const { name, phone, timestamp } = formData;
-            
-            const result = await pool.query(
-                `INSERT INTO investments (name, phone, timestamp)
-                 VALUES ($1, $2, $3)
-                 RETURNING id`,
-                [name, phone, timestamp]
-            );
-            
-            console.log(`✓ Заявка на инвестиции сохранена с ID: ${result.rows[0].id}`);
-            res.json({ success: true, id: result.rows[0].id });
-        } else {
-            console.error('✗ Неизвестный тип формы:', type);
-            res.status(400).json({ success: false, error: 'Неизвестный тип формы: ' + type });
-        }
-    } catch (error) {
-        console.error('✗ Ошибка обработки запроса:', error);
-        console.error('Детали ошибки:', error.stack);
-        res.status(500).json({ success: false, error: 'Внутренняя ошибка сервера: ' + error.message });
-    }
-});
 
 // API endpoint для получения всех бронирований (для админки)
 app.get('/api/bookings', async (req, res) => {
@@ -305,49 +241,8 @@ app.put('/api/:type/:id', async (req, res) => {
     }
 });
 
-// Автоматический ping для предотвращения засыпания (каждые 4 минуты)
-if (process.env.NODE_ENV === 'production') {
-    const SITE_URL = process.env.SITE_URL || 'https://grantarkhyz.ru';
-    const PING_INTERVAL = 4 * 60 * 1000; // 4 минуты
-    
-    function pingSelf() {
-        const https = require('https');
-        const url = new URL(SITE_URL);
-        
-        const options = {
-            hostname: url.hostname,
-            port: 443,
-            path: '/ping',
-            method: 'GET',
-            timeout: 10000
-        };
-
-        const req = https.request(options, (res) => {
-            console.log(`[${new Date().toISOString()}] ✓ Keep-alive ping успешен`);
-        });
-
-        req.on('error', (err) => {
-            console.error(`[${new Date().toISOString()}] ✗ Keep-alive ping ошибка:`, err.message);
-        });
-
-        req.on('timeout', () => {
-            req.destroy();
-        });
-
-        req.end();
-    }
-
-    // Первый ping через 1 минуту после запуска
-    setTimeout(pingSelf, 60 * 1000);
-    
-    // Затем каждые 4 минуты
-    setInterval(pingSelf, PING_INTERVAL);
-    
-    console.log(`✓ Keep-alive активен (ping каждые ${PING_INTERVAL / 1000} секунд)`);
-}
-
 // Запуск сервера
-app.listen(PORT, () => {
+const server = app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
     console.log('='.repeat(50));
     console.log(`✓ Сервер запущен на http://localhost:${PORT}`);
     console.log(`✓ База данных: PostgreSQL`);
@@ -361,6 +256,8 @@ app.listen(PORT, () => {
     console.log('='.repeat(50));
     console.log('\n✓ Ожидание запросов...\n');
 });
+
+module.exports = { app, server, pool };
 
 // Graceful shutdown
 process.on('SIGINT', async () => {

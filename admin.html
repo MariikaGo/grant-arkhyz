@@ -457,6 +457,10 @@
             }
         }
 
+        function escapeHTML(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+        }
+
         // Render table
         function renderTable(type, data) {
             const tbodyEl = document.getElementById(type + '-tbody');
@@ -473,41 +477,41 @@
 
                 if (type === 'bookings') {
                     row.innerHTML = `
-                        <td>${item.id}</td>
-                        <td>${item.booking_type || '-'}</td>
-                        <td>${item.name}</td>
-                        <td>${item.phone}</td>
-                        <td>${item.email}</td>
-                        <td>${item.check_in || '-'}</td>
-                        <td>${item.check_out || '-'}</td>
-                        <td>${item.bathhouse ? 'Да' : 'Нет'}</td>
+                        <td>${escapeHTML(item.id)}</td>
+                        <td>${escapeHTML(item.booking_type || '-')}</td>
+                        <td>${escapeHTML(item.name)}</td>
+                        <td>${escapeHTML(item.phone)}</td>
+                        <td>${escapeHTML(item.email)}</td>
+                        <td>${escapeHTML(item.check_in || '-')}</td>
+                        <td>${escapeHTML(item.check_out || '-')}</td>
+                        <td>${escapeHTML(item.bathhouse ? 'Да' : 'Нет')}</td>
                         <td>${new Date(item.created_at).toLocaleString('ru-RU')}</td>
                         <td>
-                            <button class="btn-edit" onclick="editRecord('${type}', ${item.id})">Редактировать</button>
-                            <button class="btn-delete" onclick="deleteRecord('${type}', ${item.id})">Удалить</button>
+                            <button class="btn-edit" onclick="editRecord('${type}', ${escapeHTML(item.id)})">Редактировать</button>
+                            <button class="btn-delete" onclick="deleteRecord('${type}', ${escapeHTML(item.id)})">Удалить</button>
                         </td>
                     `;
                 } else if (type === 'reviews') {
                     row.innerHTML = `
-                        <td>${item.id}</td>
-                        <td>${item.name}</td>
-                        <td>${item.email}</td>
-                        <td>${item.text.substring(0, 100)}${item.text.length > 100 ? '...' : ''}</td>
+                        <td>${escapeHTML(item.id)}</td>
+                        <td>${escapeHTML(item.name)}</td>
+                        <td>${escapeHTML(item.email)}</td>
+                        <td>${escapeHTML(item.text.substring(0, 100))}${escapeHTML(item.text.length > 100 ? '...' : '')}</td>
                         <td>${new Date(item.created_at).toLocaleString('ru-RU')}</td>
                         <td>
-                            <button class="btn-edit" onclick="editRecord('${type}', ${item.id})">Редактировать</button>
-                            <button class="btn-delete" onclick="deleteRecord('${type}', ${item.id})">Удалить</button>
+                            <button class="btn-edit" onclick="editRecord('${type}', ${escapeHTML(item.id)})">Редактировать</button>
+                            <button class="btn-delete" onclick="deleteRecord('${type}', ${escapeHTML(item.id)})">Удалить</button>
                         </td>
                     `;
                 } else if (type === 'investments') {
                     row.innerHTML = `
-                        <td>${item.id}</td>
-                        <td>${item.name}</td>
-                        <td>${item.phone}</td>
+                        <td>${escapeHTML(item.id)}</td>
+                        <td>${escapeHTML(item.name)}</td>
+                        <td>${escapeHTML(item.phone)}</td>
                         <td>${new Date(item.created_at).toLocaleString('ru-RU')}</td>
                         <td>
-                            <button class="btn-edit" onclick="editRecord('${type}', ${item.id})">Редактировать</button>
-                            <button class="btn-delete" onclick="deleteRecord('${type}', ${item.id})">Удалить</button>
+                            <button class="btn-edit" onclick="editRecord('${type}', ${escapeHTML(item.id)})">Редактировать</button>
+                            <button class="btn-delete" onclick="deleteRecord('${type}', ${escapeHTML(item.id)})">Удалить</button>
                         </td>
                     `;
                 }
@@ -549,71 +553,71 @@
 
             if (type === 'bookings') {
                 formContent.innerHTML = `
-                    <input type="hidden" name="id" value="${item.id}">
+                    <input type="hidden" name="id" value="${escapeHTML(item.id)}">
                     <input type="hidden" name="type" value="${type}">
                     <div class="form-group">
                         <label>Тип бронирования</label>
-                        <input type="text" name="booking_type" value="${item.booking_type || ''}" required>
+                        <input type="text" name="booking_type" value="${escapeHTML(item.booking_type || '')}" required>
                     </div>
                     <div class="form-group">
                         <label>Имя</label>
-                        <input type="text" name="name" value="${item.name}" required>
+                        <input type="text" name="name" value="${escapeHTML(item.name)}" required>
                     </div>
                     <div class="form-group">
                         <label>Телефон</label>
-                        <input type="tel" name="phone" value="${item.phone}" required>
+                        <input type="tel" name="phone" value="${escapeHTML(item.phone)}" required>
                     </div>
                     <div class="form-group">
                         <label>Email</label>
-                        <input type="email" name="email" value="${item.email}" required>
+                        <input type="email" name="email" value="${escapeHTML(item.email)}" required>
                     </div>
                     <div class="form-group">
                         <label>Дата заезда</label>
-                        <input type="date" name="check_in" value="${item.check_in || ''}">
+                        <input type="date" name="check_in" value="${escapeHTML(item.check_in || '')}">
                     </div>
                     <div class="form-group">
                         <label>Дата выезда</label>
-                        <input type="date" name="check_out" value="${item.check_out || ''}">
+                        <input type="date" name="check_out" value="${escapeHTML(item.check_out || '')}">
                     </div>
                     <div class="form-group">
                         <label>
-                            <input type="checkbox" name="bathhouse" ${item.bathhouse ? 'checked' : ''}>
+                            <input type="checkbox" name="bathhouse" ${escapeHTML(item.bathhouse ? 'checked' : '')}>
                             Баня
                         </label>
                     </div>
                     <div class="form-group">
                         <label>Сообщение</label>
-                        <textarea name="message">${item.message || ''}</textarea>
+                        <textarea name="message">${escapeHTML(item.message || '')}</textarea>
                     </div>
                 `;
             } else if (type === 'reviews') {
                 formContent.innerHTML = `
-                    <input type="hidden" name="id" value="${item.id}">
+                    <input type="hidden" name="id" value="${escapeHTML(item.id)}">
                     <input type="hidden" name="type" value="${type}">
                     <div class="form-group">
                         <label>Имя</label>
-                        <input type="text" name="name" value="${item.name}" required>
+                        <input type="text" name="name" value="${escapeHTML(item.name)}" required>
                     </div>
                     <div class="form-group">
                         <label>Email</label>
-                        <input type="email" name="email" value="${item.email}" required>
+                        <input type="email" name="email" value="${escapeHTML(item.email)}" required>
                     </div>
                     <div class="form-group">
                         <label>Текст отзыва</label>
-                        <textarea name="text" required>${item.text}</textarea>
+                        <textarea name="text" required>${escapeHTML(item.text)}</textarea>
                     </div>
                 `;
             } else if (type === 'investments') {
                 formContent.innerHTML = `
-                    <input type="hidden" name="id" value="${item.id}">
+                    <input type="hidden" name="id" value="${escapeHTML(item.id)}">
                     <input type="hidden" name="type" value="${type}">
                     <div class="form-group">
                         <label>Имя</label>
-                        <input type="text" name="name" value="${item.name}" required>
+                        <input type="text" name="name" value="${escapeHTML(item.name)}" required>
                     </div>
                     <div class="form-group">
                         <label>Телефон</label>
-                        <input type="tel" name="phone" value="${item.phone}" required>
+                        <input type="tel" name="phone" value="${escapeHTML(item.phone)}" required>
                     </div>
                 `;
             }
@@ -719,7 +723,7 @@
                     csv += [
                         item.id,
                         item.booking_type || '',
-                        `"${item.name}"`,
+                        `"${escapeHTML(item.name)}"`,
                         item.phone,
                         item.email,
                         item.check_in || '',
@@ -735,9 +739,9 @@
                 data.forEach(item => {
                     csv += [
                         item.id,
-                        `"${item.name}"`,
+                        `"${escapeHTML(item.name)}"`,
                         item.email,
-                        `"${item.text.replace(/"/g, '""')}"`,
+                        `"${escapeHTML(item.text.replace(/"/g, '""'))}"`,
                         item.created_at
                     ].join(',') + '\n';
                 });
@@ -747,7 +751,7 @@
                 data.forEach(item => {
                     csv += [
                         item.id,
-                        `"${item.name}"`,
+                        `"${escapeHTML(item.name)}"`,
                         item.phone,
                         item.created_at
                     ].join(',') + '\n';
